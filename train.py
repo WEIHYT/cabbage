@@ -40,6 +40,7 @@ import torch.nn as nn
 import yaml
 from torch.optim import lr_scheduler
 from tqdm import tqdm
+import matplotlib.pyplot as plt
 
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[0]  # YOLOv5 root directory
@@ -262,6 +263,7 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
     maps = np.zeros(nc)  # mAP per class
     results = (0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
     scheduler.last_epoch = start_epoch - 1  # do not move
+    lr0,lr1,lr2,epoch_num= [], [], [] ,[]
     scaler = torch.cuda.amp.GradScaler(enabled=amp)
     stopper, stop = EarlyStopping(patience=opt.patience), False
     compute_loss = ComputeLoss(model)  # init loss class
@@ -352,7 +354,11 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
         # Scheduler
         lr = [x['lr'] for x in optimizer.param_groups]  # for loggers
+        lr0.append(lr[0])
+        lr1.append(lr[1])
+        lr2.append(lr[2])
         scheduler.step()
+        epoch_num.append(epoch)
 
         if RANK in {-1, 0}:
             # mAP
@@ -379,6 +385,8 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
                 best_fitness = fi
             log_vals = list(mloss) + list(results) + lr
             callbacks.run('on_fit_epoch_end', log_vals, epoch, best_fitness, fi)
+            f1=2*results[0]*results[1]/(results[0]+results[1])
+            print('F1: ',f1)
 
             # Save model
             if (not nosave) or (final_epoch and not evolve):  # if save
@@ -413,6 +421,23 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
         # end epoch ----------------------------------------------------------------------------------------------------
     # end training -----------------------------------------------------------------------------------------------------
+
+    plt.figure()
+    plt.subplot(221)
+    plt.plot(epoch_num, lr0, color="r",label='bias')
+    plt.legend() 
+    
+    plt.subplot(222)
+    plt.plot(epoch_num, lr1, color="b",label='weight')
+    plt.legend()  
+
+    plt.subplot(223)
+    plt.plot(epoch_num, lr2,color="g",label='BN')
+    plt.legend()
+    plt.tight_layout() 
+    plt.savefig('/root/cabbage/image_cut/lr_100.jpg')
+    plt.show()
+
     if RANK in {-1, 0}:
         LOGGER.info(f'\n{epoch - start_epoch + 1} epochs completed in {(time.time() - t0) / 3600:.3f} hours.')
         for f in last, best:
@@ -445,13 +470,13 @@ def train(hyp, opt, device, callbacks):  # hyp is path/to/hyp.yaml or hyp dictio
 
 def parse_opt(known=False):
     parser = argparse.ArgumentParser()
-    parser.add_argument('--weights', type=str, default=ROOT / 'yolov5-master/weights/yolov5s.pt', help='initial weights path')
-    parser.add_argument('--cfg', type=str, default='yolov5/models/yolov5s_Lettuce.yaml', help='model.yaml path')
-    parser.add_argument('--data', type=str, default=ROOT / 'data/VOC _Lettuce.yaml', help='dataset.yaml path')
+    parser.add_argument('--weights', type=str, default=ROOT / 'yolov5-master/weights/yolov5s.pt', help='initial weights path')    
+    parser.add_argument('--cfg', type=str, default='yolov5/models/yolov5s_cabbage.yaml', help='model.yaml path')
+    parser.add_argument('--data', type=str, default=ROOT / 'data/VOC _cabbage.yaml', help='dataset.yaml path')
 
-    parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.scratch-low.yaml', help='hyperparameters path')
-    parser.add_argument('--epochs', type=int, default=50, help='total training epochs')
-    parser.add_argument('--batch-size', type=int, default=4, help='total batch size for all GPUs, -1 for autobatch')
+    parser.add_argument('--hyp', type=str, default=ROOT / 'data/hyps/hyp.scratch-low.yaml', help='hyperparameters path') #hyp.scratch-low.yaml
+    parser.add_argument('--epochs', type=int, default=100, help='total training epochs')
+    parser.add_argument('--batch-size', type=int, default=32, help='total batch size for all GPUs, -1 for autobatch')
     parser.add_argument('--imgsz', '--img', '--img-size', type=int, default=640, help='train, val image size (pixels)')
     parser.add_argument('--rect', action='store_true', help='rectangular training')
     parser.add_argument('--resume', nargs='?', const=True, default=False, help='resume most recent training')
@@ -462,9 +487,9 @@ def parse_opt(known=False):
     parser.add_argument('--evolve', type=int, nargs='?', const=300, help='evolve hyperparameters for x generations')
     parser.add_argument('--bucket', type=str, default='', help='gsutil bucket')
     parser.add_argument('--cache', type=str, nargs='?', const='ram', help='image --cache ram/disk')
-    parser.add_argument('--image-weights', action='store_true', help='use weighted image selection for training')
+    parser.add_argument('--image-weights', action='store_true', help='use weighted image selection for training')  #默认是不开启的,主要是为了解决样本不平衡问题；开启后会对于上一轮训练效果不好的图片，在下一轮中增加一些权重
     parser.add_argument('--device', default='', help='cuda device, i.e. 0 or 0,1,2,3 or cpu')
-    parser.add_argument('--multi-scale', action='store_true', help='vary img-size +/- 50%%')
+    parser.add_argument('--multi-scale', default=False, help='vary img-size +/- 50%%')  #是否启用多尺度训练，默认是不开启的
     parser.add_argument('--single-cls', action='store_true', help='train multi-class data as single-class')
     parser.add_argument('--optimizer', type=str, choices=['SGD', 'Adam', 'AdamW'], default='SGD', help='optimizer')
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
@@ -473,12 +498,12 @@ def parse_opt(known=False):
     parser.add_argument('--name', default='exp', help='save to project/name')
     parser.add_argument('--exist-ok', action='store_true', help='existing project/name ok, do not increment')
     parser.add_argument('--quad', action='store_true', help='quad dataloader')
-    parser.add_argument('--cos-lr', action='store_true', help='cosine LR scheduler')
+    parser.add_argument('--cos-lr',  default=False, help='cosine LR scheduler')  #action='store_true'
     parser.add_argument('--label-smoothing', type=float, default=0.0, help='Label smoothing epsilon')
     parser.add_argument('--patience', type=int, default=100, help='EarlyStopping patience (epochs without improvement)')
     parser.add_argument('--freeze', nargs='+', type=int, default=[0], help='Freeze layers: backbone=10, first3=0 1 2')
     parser.add_argument('--save-period', type=int, default=-1, help='Save checkpoint every x epochs (disabled if < 1)')
-    parser.add_argument('--seed', type=int, default=0, help='Global training seed')
+    parser.add_argument('--seed', type=int, default=1, help='Global training seed')
     parser.add_argument('--local_rank', type=int, default=-1, help='Automatic DDP Multi-GPU argument, do not modify')
 
     # Logger arguments
@@ -631,6 +656,10 @@ def main(opt, callbacks=Callbacks()):
             keys = ('metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95', 'val/box_loss',
                     'val/obj_loss', 'val/cls_loss')
             print_mutation(keys, results, hyp.copy(), save_dir, opt.bucket)
+
+            # f1=2*results[0]*results[1]/(results[0]+results[1])
+            # with open(evolve_csv, 'w') as f:
+            #     f.write(('%f').rstrip(',') %f1+ '\n')
 
         # Plot results
         plot_evolve(evolve_csv)

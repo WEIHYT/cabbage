@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 4
+names: ['large', 'little', 'middle', 'mini']
+
+roboflow:
+  workspace: plant-txvrf
+  project: voc_leaves1
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/plant-txvrf/voc_leaves1/dataset/2

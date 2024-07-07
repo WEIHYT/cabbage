@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 3
+names: ['Index1', 'Index2', 'Index3']
+
+roboflow:
+  workspace: plant-txvrf
+  project: voc_cabbage
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/plant-txvrf/voc_cabbage/dataset/2
